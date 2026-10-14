@@ -13,6 +13,8 @@ import {
   WatchProviderOptions,
   ProviderChangedHandler,
   WalletErrorInfo,
+  WalletErrorMessageKey,
+  WalletErrorMessageOptions,
   FocusPendingApprovalResult,
 } from './types';
 
@@ -284,11 +286,105 @@ export function getWalletErrorMessage(error: unknown): string {
   return String(error);
 }
 
+const WALLET_ERROR_MESSAGES: Record<'zh-CN' | 'en-US', Record<WalletErrorMessageKey, string>> = {
+  'zh-CN': {
+    userRejected: '你已取消本次钱包操作。需要继续时，可以重新发起。',
+    walletNotFound: '没有检测到可用的钱包。请安装或启用钱包后重试。',
+    walletLocked: '钱包当前已锁定。请打开钱包并解锁，然后重试。',
+    pendingApproval: '钱包中已有待处理的确认请求。请切换到钱包窗口完成或取消该请求。',
+    unsupportedMethod: '当前钱包不支持此操作。请检查钱包版本，或选择其他支持的连接方式。',
+    permissionDenied: '钱包尚未授权此网站执行该操作。请检查连接权限后重试。',
+    disconnected: '钱包连接已中断。请重新连接钱包后重试。',
+    chainDisconnected: '钱包当前未连接到所需网络。请切换网络后重试。',
+    timeout: '钱包暂时没有响应。请打开钱包确认请求仍在等待，然后重试。',
+    identityNotVerified: '此钱包身份尚未完成钱包账户验证。请在钱包中完成身份验证后重试。',
+    identityCredentialMissing: '钱包身份缺少此应用要求的已验证资料。请补全并验证相应资料后重试。',
+    identityScopeMismatch: '应用登录请求与服务端配置的身份权限不一致。请联系应用支持人员。',
+    unknown: '钱包操作未能完成。请重试；如果问题持续，请联系应用支持人员。'
+  },
+  'en-US': {
+    userRejected: 'You canceled this wallet request. Start it again when you are ready.',
+    walletNotFound: 'No wallet was detected. Install or enable a wallet, then try again.',
+    walletLocked: 'Your wallet is locked. Open the wallet, unlock it, and try again.',
+    pendingApproval: 'A wallet confirmation is already pending. Open the wallet window to approve or cancel it.',
+    unsupportedMethod: 'This wallet does not support the requested action. Check for an update or choose another supported sign-in method.',
+    permissionDenied: 'The wallet has not authorized this site to perform the requested action. Review the connection permissions and try again.',
+    disconnected: 'The wallet connection was interrupted. Reconnect your wallet and try again.',
+    chainDisconnected: 'The wallet is not connected to the required network. Switch networks and try again.',
+    timeout: 'The wallet did not respond. Open it to check for a pending request, then try again.',
+    identityNotVerified: 'This wallet identity has not completed wallet account verification. Verify it in your wallet, then try again.',
+    identityCredentialMissing: 'The wallet identity is missing verified information required by this app. Add and verify the requested information, then try again.',
+    identityScopeMismatch: 'The requested identity permissions do not match the application server configuration. Contact the application support team.',
+    unknown: 'The wallet action could not be completed. Try again; if the problem continues, contact the application support team.'
+  }
+};
+
+function normalizeWalletErrorLocale(locale?: string): 'zh-CN' | 'en-US' {
+  const value = String(locale || (typeof navigator !== 'undefined' ? navigator.language : '') || 'en-US')
+    .trim()
+    .toLowerCase();
+  return value === 'zh' || value.startsWith('zh-') ? 'zh-CN' : 'en-US';
+}
+
+function getWalletErrorCodeName(error: unknown): string {
+  const value = error as {
+    code?: unknown;
+    data?: { code?: unknown };
+    payload?: { code?: unknown; data?: { code?: unknown } };
+    cause?: { code?: unknown; data?: { code?: unknown } };
+  } | null;
+  const code = [
+    value?.code,
+    value?.data?.code,
+    value?.payload?.code,
+    value?.payload?.data?.code,
+    value?.cause?.code,
+    value?.cause?.data?.code
+  ].find((candidate) => typeof candidate === 'string' && candidate.trim());
+  if (typeof code === 'string') return code.trim().toUpperCase();
+  const message = getWalletErrorMessage(error).trim();
+  const messageCode = message.match(/\b(?:WALLET_[A-Z0-9_]+|IDENTITY_[A-Z0-9_]+(?::[A-Z][A-Za-z0-9_]*)?)\b/i)?.[0];
+  return messageCode?.toUpperCase() || '';
+}
+
+function walletErrorMessageKey(error: unknown): WalletErrorMessageKey {
+  const code = getWalletErrorCode(error);
+  const codeName = getWalletErrorCodeName(error);
+  const message = getWalletErrorMessage(error).toLowerCase();
+
+  if (code === 4001 || codeName === 'USER_REJECTED' || message.includes('user rejected')) return 'userRejected';
+  if (codeName === 'WALLET_LOCKED' || message.includes('wallet is locked') || message.includes('wallet locked')) return 'walletLocked';
+  if (code === -32002 || codeName === 'WALLET_POPUP_OPEN' || message.includes('already pending') || message.includes('popup is already open')) return 'pendingApproval';
+  if (code === -32601 || code === 4200 || message.includes('does not exist/is not available') || message.includes('method not found')) return 'unsupportedMethod';
+  if (codeName === 'IDENTITY_WALLET_NOT_VERIFIED') return 'identityNotVerified';
+  if (codeName.startsWith('IDENTITY_CREDENTIAL_REQUIRED') || codeName.startsWith('IDENTITY_CREDENTIAL_MISSING')) return 'identityCredentialMissing';
+  if (codeName === 'IDENTITY_SCOPE_MISMATCH') return 'identityScopeMismatch';
+  if (code === 4100 || codeName === 'UNAUTHORIZED' || message.includes('unauthorized')) return 'permissionDenied';
+  if (code === 4901 || message.includes('chain disconnected')) return 'chainDisconnected';
+  if (code === 4900 || message.includes('disconnected') || message.includes('not connected')) return 'disconnected';
+  if (message.includes('timeout') || message.includes('timed out')) return 'timeout';
+  if (codeName === 'WALLET_NOT_FOUND' || message.includes('no injected wallet provider') || message.includes('no wallet was detected')) return 'walletNotFound';
+  return 'unknown';
+}
+
+/** Convert technical wallet errors into concise, actionable copy for the DApp's active language. */
+export function getLocalizedWalletErrorMessage(error: unknown, options: WalletErrorMessageOptions = {}): string {
+  const key = walletErrorMessageKey(error);
+  const override = options.messages?.[key]?.trim();
+  return override || WALLET_ERROR_MESSAGES[normalizeWalletErrorLocale(options.locale)][key];
+}
+
 export function getWalletErrorCode(error: unknown): number | null {
-  const code = Number((error as { code?: unknown })?.code);
-  if (!Number.isNaN(code)) return code;
-  const causeCode = Number((error as { cause?: { code?: unknown } })?.cause?.code);
-  if (!Number.isNaN(causeCode)) return causeCode;
+  const parseCode = (value: unknown): number | null => {
+    if (typeof value !== 'number' && typeof value !== 'string') return null;
+    if (typeof value === 'string' && !value.trim()) return null;
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  };
+  const code = parseCode((error as { code?: unknown })?.code);
+  if (code !== null) return code;
+  const causeCode = parseCode((error as { cause?: { code?: unknown } })?.cause?.code);
+  if (causeCode !== null) return causeCode;
   return null;
 }
 

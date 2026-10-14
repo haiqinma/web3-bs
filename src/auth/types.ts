@@ -47,6 +47,28 @@ export type ProviderChangedHandler = (payload: { provider: Eip1193Provider | nul
 
 export type WalletErrorType = 'userRejected' | 'disconnected' | 'timeout' | 'notFound' | 'unknown'
 
+export type WalletErrorMessageKey =
+    | 'userRejected'
+    | 'walletNotFound'
+    | 'walletLocked'
+    | 'pendingApproval'
+    | 'unsupportedMethod'
+    | 'permissionDenied'
+    | 'disconnected'
+    | 'chainDisconnected'
+    | 'timeout'
+    | 'identityNotVerified'
+    | 'identityCredentialMissing'
+    | 'identityScopeMismatch'
+    | 'unknown'
+
+export type WalletErrorMessageOptions = {
+    /** Current DApp locale. Built-in messages support zh-CN and en-US. */
+    locale?: string
+    /** Override selected messages with the DApp's own localized copy. */
+    messages?: Partial<Record<WalletErrorMessageKey, string>>
+}
+
 export type WalletErrorInfo = {
     type: WalletErrorType
     code: number | null
