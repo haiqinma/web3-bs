@@ -245,7 +245,8 @@ Token 存储是协议无关的应用会话基础设施，SIWE、Wallet Identity 
 - `encrypt` — 用命名安全套件加密（默认 `aes-256-gcm`）
 - `decrypt` — 解密 v1 格式密文
 - `getSupportedCipherSuites` — 列出可用套件
-- `CipherError` / `isUserRejectedWalletAction` — 错误分类
+- `CipherError` / `isUserRejectedWalletAction` — 加解密错误分类
+- `getLocalizedWalletErrorMessage(error, { locale, messages })` — 将 Provider / Wallet Identity 错误转换为 DApp 当前语言的用户提示。SDK 不显示 UI；DApp 使用自己的 Toast/表单组件展示，并继续使用原始 error code 做程序判断。
 
 详细用法、安全模型、限制见 [`加解密服务.md`](./加解密服务.md)。
 
